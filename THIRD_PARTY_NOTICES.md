@@ -14,10 +14,9 @@ and under which terms.
 
 ## JUCE
 
-JUCE is used under the JUCE 8 EULA. Because Clear Space is sold closed-source, the
-project must hold the JUCE commercial tier appropriate to Richardson Media Solutions'
-revenue before v1 ships (JUCE 8 no longer has a splash screen; the tiers are revenue-based).
-**Open item for Seth** — see `CHANGELOG.md` v0.1.
+JUCE is used under the JUCE 8 EULA on the **free tier for now** (decision 2026-09-13).
+JUCE 8 tiers are revenue-based and there is no splash screen. Before v1 ships, confirm the
+tier still matches Richardson Media Solutions' revenue and upgrade if needed.
 
 ## Catch2 (BSL-1.0)
 

@@ -39,13 +39,9 @@ Each entry: what changed, what Seth should listen for, open questions.
 Nothing — the plugin is a pass-through. Open the Standalone once to confirm it launches and
 the generic parameter panel shows all sections (Global, Delay, Delay Duck, Reverb, Reverb Duck).
 
-### Open questions
-1. **JUCE licence tier.** JUCE 8 tiers are revenue-based (no splash screen any more).
-   Confirm which tier Richardson Media Solutions will hold before v1 ships; nothing in the
-   build depends on it.
-2. **Default branch.** Phase 0 was pushed to `claude/phase-0-planning-28jlow` only. Create
-   `main` from it (or tell the next session to push `main`).
-3. **CI cost.** The macOS jobs run on every push. Fine for a public repo; on a private repo
-   they burn the free macOS minutes quickly — say if you want them limited to tags/PRs.
-4. **Bus layouts.** Mono→stereo is accepted in addition to stereo→stereo. Say "stereo only"
-   before Phase 1 if that's not wanted.
+### Decisions (Seth, 2026-09-13)
+1. **JUCE licence:** free tier for now. Revisit before v1 ships.
+2. **Bus layouts:** mono→stereo for mono sources and stereo→stereo for stereo sources —
+   both stay accepted (as implemented).
+3. **CI:** macOS + Linux workflow runs on every push.
+4. `main` and tag `v0.1` were created by Seth from this branch.
