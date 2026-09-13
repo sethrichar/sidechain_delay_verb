@@ -1,0 +1,19 @@
+# Build trees
+build/
+build-*/
+cmake-build-*/
+out/
+
+# IDE / editor
+.vscode/
+.idea/
+.cache/
+*.swp
+compile_commands.json
+
+# macOS
+.DS_Store
+
+# Render tool output
+*.wav
+!tests/data/*.wav

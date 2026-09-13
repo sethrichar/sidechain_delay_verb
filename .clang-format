@@ -1,0 +1,23 @@
+# Clear Space — LLVM base, 4-space indent, 100 columns (CLAUDE.md §1)
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Allman
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 4
+IndentCaseLabels: false
+NamespaceIndentation: None
+PointerAlignment: Left
+SortIncludes: true
+IncludeBlocks: Preserve
+SpaceAfterTemplateKeyword: true
+FixNamespaceComments: true
