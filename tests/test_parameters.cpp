@@ -129,9 +129,11 @@ TEST_CASE("parameters: float ranges and defaults match SPEC §6", "[parameters]"
         CHECK(range.end == Approx(spec.hi));
         CHECK(param->get() == Approx(spec.def));
 
-        // Round trip through normalisation must land back on the default.
+        // Round trip through normalisation must land back on the default. Relative epsilon
+        // is meaningless against a 0 default (delayLevel/reverbLevel), so allow an absolute
+        // margin too — macOS libm leaves ~2e-6 of residue where Linux lands on exactly 0.
         const auto norm = range.convertTo0to1(spec.def);
-        CHECK(range.convertFrom0to1(norm) == Approx(spec.def).epsilon(1e-4));
+        CHECK(range.convertFrom0to1(norm) == Approx(spec.def).epsilon(1e-4).margin(1e-4));
 
         // Ends of the range must normalise to exactly 0 and 1.
         CHECK(range.convertTo0to1(spec.lo) == Approx(0.0f).margin(1e-6));
