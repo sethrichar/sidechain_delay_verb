@@ -1,0 +1,116 @@
+# Builds Clear Space on macOS (Release universal + Debug) and Linux, runs ctest,
+# pluginval (strictness 10) and, on macOS, auval. This is the authoritative
+# macOS validation for sessions that run on Linux.
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PLUGINVAL_STRICTNESS: 10
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.config }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - config: Release
+            archs: "arm64;x86_64"
+          - config: Debug
+            archs: "arm64"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ninja
+        run: brew install ninja
+
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+          -DCMAKE_OSX_ARCHITECTURES="${{ matrix.archs }}"
+          -DCLEARSPACE_COPY_PLUGIN=ON
+
+      - name: Build
+        run: cmake --build build -j3
+
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Download pluginval
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          ./pluginval.app/Contents/MacOS/pluginval --version
+
+      - name: pluginval VST3
+        run: >
+          ./pluginval.app/Contents/MacOS/pluginval
+          --strictness-level $PLUGINVAL_STRICTNESS --validate-in-process --timeout-ms 600000
+          --validate "build/ClearSpace_artefacts/${{ matrix.config }}/VST3/Clear Space.vst3"
+
+      - name: pluginval AU
+        run: >
+          ./pluginval.app/Contents/MacOS/pluginval
+          --strictness-level $PLUGINVAL_STRICTNESS --validate-in-process --timeout-ms 600000
+          --validate "build/ClearSpace_artefacts/${{ matrix.config }}/AU/Clear Space.component"
+
+      - name: auval
+        run: |
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -v aufx Clsp Rmsl
+
+      - name: Package artefacts
+        if: matrix.config == 'Release'
+        run: |
+          cd build/ClearSpace_artefacts/Release
+          zip -qry "$GITHUB_WORKSPACE/ClearSpace-macOS-unsigned.zip" VST3 AU Standalone
+      - uses: actions/upload-artifact@v4
+        if: matrix.config == 'Release'
+        with:
+          name: ClearSpace-macOS-unsigned
+          path: ClearSpace-macOS-unsigned.zip
+          retention-days: 14
+
+  linux:
+    name: Linux Release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install JUCE build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ninja-build \
+            libasound2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
+            libxext-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j4
+
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Render tool smoke
+        run: |
+          R=$(find build -type f -name render -perm -u+x | head -1)
+          "$R" --in speechlike --seconds 1 --out a.wav
+          "$R" --in a.wav --out b.wav --stats
+          cmp a.wav b.wav
+
+      - name: pluginval VST3 (Linux, best effort)
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip
+          unzip -q pluginval.zip
+          xvfb-run -a ./pluginval --strictness-level $PLUGINVAL_STRICTNESS --validate-in-process \
+            --timeout-ms 600000 --validate "build/ClearSpace_artefacts/Release/VST3/Clear Space.vst3"
