@@ -9,8 +9,9 @@ Standalone, macOS first. Built with CMake + JUCE 8.0.15.
 - Project conventions (for Claude Code sessions): [`CLAUDE.md`](CLAUDE.md)
 - Design decisions: [`docs/decisions/`](docs/decisions/)
 
-**Status:** Phase 0 (`v0.1`) — scaffold. The plugin is a stereo pass-through with the full
-parameter set exposed through a generic editor. No DSP yet.
+**Status:** Phase 1 (`v0.2`) — routing + ducker. The SPEC §2 signal flow and the SPEC §3
+sidechain ducker are real and measured; the delay and reverb themselves are still throwaway
+stand-ins (`src/dsp/standin/`) until Phases 2 and 3. Generic editor until Phase 6.
 
 ## Build
 
@@ -77,6 +78,7 @@ a build: `build/tools/render/render_artefacts/<Config>/render`.
 render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
        [--sr 48000] [--block 512] [--seconds 2.0] [--freq 1000] [--level -6]
        [--seed 1] [--set id=value]... [--stats] [--tail]
+       [--sidechain <source|path.wav>] [--sc-freq 1000] [--sc-level -6] [--mono-in]
 ```
 
 - `--set` takes the parameter ID from `src/Parameters.h` and a value in natural units
@@ -84,7 +86,18 @@ render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
 - `--stats` prints one `key=value` per line: `sampleRate`, `channels`, `samples`,
   `nanCount`, `infCount`, and per channel `chN.peak`, `chN.peakDb`, `chN.rms`, `chN.rmsDb`,
   `chN.nanCount`, `chN.infCount`, `chN.denormalCount`, `chN.firstNonZero`.
-- Output WAV is 32-bit float, so a pass-through round trip is bit-exact.
+- `--sidechain` feeds the sidechain bus (mono or stereo WAV, or a synthetic source sharing
+  `--seconds`/`--seed` with `--in`); pair it with `--set duckSource=External`. `--mono-in` uses
+  the mono→stereo bus layout. `--stats` then also reports `tailSeconds`, `usedExternalKey`,
+  `duck.delayGRmaxDb` and `duck.reverbGRmaxDb`.
+- Output WAV is 32-bit float, so a round trip with `--set mix=0` is bit-exact (the default
+  mix is 50 %, so the raw default is no longer a pass-through).
+
+Quick ducking check:
+
+```
+render --in sine --sidechain burst --set duckSource=External --set mix=100 --stats | grep duck
+```
 - Exit codes: `0` ok, `1` usage error, `2` render/IO error, `3` NaN/Inf in the output.
 
 ## Formatting
@@ -92,7 +105,7 @@ render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
 `.clang-format` (LLVM base, 4 spaces, 100 columns). Run before committing:
 
 ```
-clang-format -i src/*.{h,cpp} tests/*.cpp tools/render/*.{h,cpp}
+clang-format -i src/*.{h,cpp} src/dsp/*.{h,cpp} src/dsp/standin/*.h tests/*.cpp tools/render/*.{h,cpp}
 ```
 
 ## Layout
@@ -100,7 +113,7 @@ clang-format -i src/*.{h,cpp} tests/*.cpp tools/render/*.{h,cpp}
 ```
 CMakeLists.txt           project, JUCE/Catch2 pins, plugin target, -Werror policy
 src/                     PluginProcessor, PluginEditor, Parameters (APVTS single source of truth)
-src/dsp/                 pure DSP (from Phase 1)
+src/dsp/                 pure DSP: Ducker, Routing, Biquad, Smoother; standin/ = Phase 1 placeholders
 src/ui/                  custom look-and-feel and components (Phase 6)
 tests/                   Catch2 tests, discovered into ctest
 tools/render/            offline render library + CLI
