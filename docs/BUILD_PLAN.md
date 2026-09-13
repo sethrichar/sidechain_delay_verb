@@ -7,17 +7,17 @@ first one whose checkbox is unticked. Tick boxes as you complete them.
 ---
 
 ## Phase 0 — Scaffold  →  tag `v0.1`
-- [ ] CMake project with JUCE pinned; targets: VST3, AU, Standalone.
-- [ ] Empty stereo pass-through processor with a sidechain input bus declared
+- [x] CMake project with JUCE pinned; targets: VST3, AU, Standalone.
+- [x] Empty stereo pass-through processor with a sidechain input bus declared
       (`withInput("Sidechain", stereo, false)`).
-- [ ] `Parameters.h/.cpp` with the **full** APVTS layout from SPEC §6 (all params exist
+- [x] `Parameters.h/.cpp` with the **full** APVTS layout from SPEC §6 (all params exist
       from day one, even before they do anything — this keeps presets/automation stable).
-- [ ] Catch2 wired into `ctest` with one trivial test.
-- [ ] `tools/render` CLI: synthetic sources, WAV in/out, `--set`, `--stats` (peak, RMS,
+- [x] Catch2 wired into `ctest` with one trivial test.
+- [x] `tools/render` CLI: synthetic sources, WAV in/out, `--set`, `--stats` (peak, RMS,
       NaN/Inf count, first-nonzero-sample index).
-- [ ] `.clang-format`, `README.md` (how to build/test/validate), `CHANGELOG.md`,
+- [x] `.clang-format`, `README.md` (how to build/test/validate), `CHANGELOG.md`,
       `docs/LISTENING_NOTES.md` (empty template), `docs/decisions/ADR-0001-juce-fetch.md`.
-- [ ] Optional: GitHub Actions macOS workflow that builds and runs `ctest`.
+- [x] Optional: GitHub Actions macOS workflow that builds and runs `ctest`.
 - **Accept:** builds Release + Debug with `-Werror`; `pluginval --strictness-level 10`
   and `auval` pass on the pass-through; render tool round-trips a WAV bit-exactly.
 
