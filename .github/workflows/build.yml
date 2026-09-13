@@ -104,9 +104,13 @@ jobs:
       - name: Render tool smoke
         run: |
           R=$(find build -type f -name render -perm -u+x | head -1)
-          "$R" --in speechlike --seconds 1 --out a.wav
-          "$R" --in a.wav --out b.wav --stats
+          "$R" --in speechlike --seconds 1 --set mix=0 --out a.wav
+          "$R" --in a.wav --set mix=0 --out b.wav --stats
           cmp a.wav b.wav
+          "$R" --in sine --sidechain burst --set duckSource=External --set mix=100 --stats \
+            | tee duck.txt
+          grep -q "usedExternalKey=1" duck.txt
+          awk -F= '/duck.delayGRmaxDb/ { found = 1; ok = ($2 >= 11) } END { exit (found && ok) ? 0 : 1 }' duck.txt
 
       - name: pluginval VST3 (Linux, best effort)
         run: |
