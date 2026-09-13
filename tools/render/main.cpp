@@ -3,6 +3,7 @@
 //   render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
 //          [--sr 48000] [--block 512] [--seconds 2.0] [--freq 1000] [--level -6]
 //          [--seed 1] [--set id=value]... [--stats] [--tail]
+//          [--sidechain <source|path.wav>] [--sc-freq 1000] [--sc-level -6] [--mono-in]
 //
 // Exit codes: 0 ok · 1 usage error · 2 render/IO error · 3 NaN/Inf in output.
 
@@ -27,8 +28,10 @@ struct Options
 {
     std::string input;
     std::string output;
+    std::string sidechain;
     RenderSettings render;
     SourceSpec source;
+    SourceSpec sidechainSource;
     bool stats = false;
     bool help = false;
 };
@@ -46,6 +49,11 @@ void printUsage()
                  "  --set id=value       parameter override (repeatable)\n"
                  "  --stats              print key=value statistics\n"
                  "  --tail               append the processor's reported tail\n"
+                 "  --sidechain <src>    feed the sidechain bus from a synthetic source or WAV;\n"
+                 "                       synthetic sources share --seconds/--seed with --in\n"
+                 "  --sc-freq <hz>       sidechain sine/burst frequency (1000)\n"
+                 "  --sc-level <dbfs>    sidechain synthetic peak level (-6)\n"
+                 "  --mono-in            use the mono->stereo bus layout (input channel 0 only)\n"
                  "  --help\n";
 }
 
@@ -72,6 +80,26 @@ bool parseArgs(int argc, char** argv, Options& opts, std::string& error)
             opts.stats = true;
         else if (arg == "--tail")
             opts.render.appendTail = true;
+        else if (arg == "--mono-in")
+            opts.render.monoInput = true;
+        else if (arg == "--sidechain")
+        {
+            if ((v = need(i, "--sidechain")) == nullptr)
+                return false;
+            opts.sidechain = v;
+        }
+        else if (arg == "--sc-freq")
+        {
+            if ((v = need(i, "--sc-freq")) == nullptr)
+                return false;
+            opts.sidechainSource.freqHz = std::stod(v);
+        }
+        else if (arg == "--sc-level")
+        {
+            if ((v = need(i, "--sc-level")) == nullptr)
+                return false;
+            opts.sidechainSource.levelDb = std::stof(v);
+        }
         else if (arg == "--in")
         {
             if ((v = need(i, "--in")) == nullptr)
@@ -197,6 +225,30 @@ int main(int argc, char** argv)
         opts.render.sampleRate = wav->sampleRate; // process at the file's rate
     }
 
+    // ---- sidechain ----
+    if (!opts.sidechain.empty())
+    {
+        if (auto kind = parseSourceKind(opts.sidechain))
+        {
+            opts.sidechainSource.kind = *kind;
+            opts.sidechainSource.seconds = opts.source.seconds;
+            opts.sidechainSource.seed = opts.source.seed + 1;
+            opts.render.sidechain = makeSource(opts.sidechainSource, opts.render.sampleRate);
+        }
+        else
+        {
+            const juce::File file =
+                juce::File::getCurrentWorkingDirectory().getChildFile(opts.sidechain);
+            auto wav = readWav(file);
+            if (!wav)
+            {
+                std::cerr << "render: cannot read sidechain WAV '" << opts.sidechain << "'\n";
+                return 2;
+            }
+            opts.render.sidechain = std::move(wav->buffer);
+        }
+    }
+
     // ---- render ----
     auto out = renderThroughProcessor(input, opts.render);
     if (!out.ok())
@@ -219,7 +271,13 @@ int main(int argc, char** argv)
 
     const auto stats = computeStats(out.buffer, opts.render.sampleRate);
     if (opts.stats)
+    {
         std::cout << formatStats(stats);
+        std::cout << "tailSeconds=" << out.tailSeconds << '\n'
+                  << "usedExternalKey=" << (out.usedExternalKey ? 1 : 0) << '\n'
+                  << "duck.delayGRmaxDb=" << out.maxDelayGrDb << '\n'
+                  << "duck.reverbGRmaxDb=" << out.maxReverbGrDb << '\n';
+    }
 
     if (!stats.isClean())
     {
