@@ -22,11 +22,11 @@ first one whose checkbox is unticked. Tick boxes as you complete them.
   and `auval` pass on the pass-through; render tool round-trips a WAV bit-exactly.
 
 ## Phase 1 — Routing + ducker  →  tag `v0.2`
-- [ ] `Routing`: dry/wet split, serial/parallel, per-section level, equal-power mix,
+- [x] `Routing`: dry/wet split, serial/parallel, per-section level, equal-power mix,
       click-free bypass, input/output trim, tail reporting.
-- [ ] `Ducker` per SPEC §3, two instances, `duckLink`, `duckSource` with sidechain-bus
+- [x] `Ducker` per SPEC §3, two instances, `duckLink`, `duckSource` with sidechain-bus
       fallback. GR published via atomics.
-- [ ] Temporary stand-in effects: a plain 500 ms delay and a plain 2 s comb "reverb"
+- [x] Temporary stand-in effects: a plain 500 ms delay and a plain 2 s comb "reverb"
       so the ducker can be tested end to end. (Keep them in `archive/` later — don't
       delete.)
 - **Accept:** ducker tests from CLAUDE.md §6 pass (depth, attack, hold, release, key

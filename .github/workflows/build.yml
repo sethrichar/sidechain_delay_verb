@@ -105,8 +105,9 @@ jobs:
         run: |
           R=$(find build -type f -name render -perm -u+x | head -1)
           "$R" --in speechlike --seconds 1 --out a.wav
-          "$R" --in a.wav --out b.wav --stats
+          "$R" --in a.wav --set mix=0 --out b.wav --stats
           cmp a.wav b.wav
+          "$R" --in burst --seconds 2 --sidechain sine --set duckSource=External --tail --stats
 
       - name: pluginval VST3 (Linux, best effort)
         run: |
