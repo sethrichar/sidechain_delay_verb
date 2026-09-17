@@ -1,6 +1,8 @@
 // Phase 1 acceptance, end to end through ClearSpaceProcessor via the render library:
-// routing (mix law, trims, serial/parallel, click-free bypass, tails), the stand-in effects,
-// ducking on the returns, duck link, and the external sidechain key.
+// routing (mix law, trims, serial/parallel, click-free bypass, tails), the effects' levels
+// and tails, ducking on the returns, duck link, and the external sidechain key.
+// The delay is pinned to 500 ms with modulation off wherever timing matters; the delay
+// engine itself is covered in test_delay.cpp.
 
 #include "Measure.h"
 #include "Parameters.h"
@@ -80,7 +82,9 @@ juce::AudioBuffer<float> renderWith(const juce::AudioBuffer<float>& input, doubl
 const Overrides delayOnly = {{ParamID::mix, "100"},
                              {ParamID::reverbBypass, "on"},
                              {ParamID::delayDuckEnable, "off"},
-                             {ParamID::reverbDuckEnable, "off"}};
+                             {ParamID::reverbDuckEnable, "off"},
+                             {ParamID::delayTime, "500"},
+                             {ParamID::delayMod, "0"}};
 const Overrides reverbOnly = {{ParamID::mix, "100"},
                               {ParamID::delayBypass, "on"},
                               {ParamID::delayDuckEnable, "off"},
@@ -160,25 +164,20 @@ TEST_CASE("routing: input and output trims", "[routing][trim]")
     CHECK(peakIn(out, 0, from, out.getNumSamples()) == Approx(inPeak).epsilon(0.005));
 }
 
-TEST_CASE("routing: stand-in delay echoes at 500 ms with the requested feedback and level",
-          "[routing][standin]")
+TEST_CASE("routing: the delay return echoes at the set time and level", "[routing][delay]")
 {
     for (double sr : {44100.0, 48000.0, 96000.0})
     {
         INFO("sr " << sr);
-        const auto in = source(SourceKind::impulse, 1.6, sr);
+        const auto in = source(SourceKind::impulse, 1.1, sr);
         auto out = renderWith(in, sr, delayOnly + Overrides{{ParamID::delayFeedback, "50"}});
         const float* L = out.getReadPointer(0);
         const int first = firstAbove(L, 0, out.getNumSamples(), 1.0e-6f);
         CHECK(std::abs(first - toSample(0.5, sr)) <= 1);
-        // The impulse comes straight back at unity, the repeat at 50 %.
+        // The impulse comes straight back at unity …
         CHECK(peakIn(out, 0, toSample(0.49, sr), toSample(0.51, sr)) ==
               Approx(in.getMagnitude(0, 0, 1)).epsilon(0.01));
-        CHECK(peakIn(out, 0, toSample(0.99, sr), toSample(1.01, sr)) ==
-              Approx(0.5f * in.getMagnitude(0, 0, 1)).epsilon(0.02));
-        CHECK(peakIn(out, 0, toSample(1.49, sr), toSample(1.51, sr)) ==
-              Approx(0.25f * in.getMagnitude(0, 0, 1)).epsilon(0.03));
-        // Nothing between echoes.
+        // … with nothing between it and the first repeat.
         CHECK(peakIn(out, 0, toSample(0.51, sr), toSample(0.99, sr)) == Approx(0.0f).margin(0.0f));
         // Both channels identical for an identical input.
         CHECK(peakIn(out, 1, toSample(0.49, sr), toSample(0.51, sr)) ==
@@ -223,6 +222,8 @@ TEST_CASE("routing: serial feeds the reverb with the delay return, parallel does
     const Overrides base = {{ParamID::mix, "100"},
                             {ParamID::delayDuckEnable, "off"},
                             {ParamID::reverbDuckEnable, "off"},
+                            {ParamID::delayTime, "500"},
+                            {ParamID::delayMod, "0"},
                             {ParamID::delayFeedback, "0"},
                             {ParamID::reverbDecay, "0.3"}};
     auto serial = renderWith(in, sr, base + Overrides{{ParamID::routing, "Serial"}});
@@ -318,15 +319,25 @@ TEST_CASE("routing: tail reporting and silence", "[routing][tail]")
     {
         ClearSpaceProcessor p;
         auto& apvts = p.getAPVTS();
+        applyParameterOverride(apvts, ParamID::delayTime, "500");
         applyParameterOverride(apvts, ParamID::delayFeedback, "0"); // one repeat: 0.5 s
         applyParameterOverride(apvts, ParamID::reverbDecay, "3");
-        CHECK(p.getTailLengthSeconds() == Approx(3.5));
+        // The delay tail carries a 2 ms allowance for read-position modulation. The time is
+        // taken from the last processBlock (or the constructor), so run one block first.
+        p.setRateAndBufferSizeDetails(sr, 64);
+        p.prepareToPlay(sr, 64);
+        juce::AudioBuffer<float> block(2, 64);
+        block.clear();
+        juce::MidiBuffer midi;
+        p.processBlock(block, midi);
+        CHECK(p.getTailLengthSeconds() == Approx(3.502).margin(1e-3));
         applyParameterOverride(apvts, ParamID::routing, "Parallel");
-        CHECK(p.getTailLengthSeconds() == Approx(3.0));
+        CHECK(p.getTailLengthSeconds() == Approx(3.0).margin(1e-3));
         applyParameterOverride(apvts, ParamID::reverbBypass, "on");
-        CHECK(p.getTailLengthSeconds() == Approx(0.5));
+        CHECK(p.getTailLengthSeconds() == Approx(0.502).margin(1e-3));
         applyParameterOverride(apvts, ParamID::delayBypass, "on");
-        CHECK(p.getTailLengthSeconds() == Approx(0.0));
+        CHECK(p.getTailLengthSeconds() == Approx(0.0).margin(1e-6));
+        p.releaseResources();
     }
 }
 
@@ -520,7 +531,7 @@ TEST_CASE("processor: no NaN/Inf/denormals for every rate, block size, routing a
                                        {ParamID::mix, "100"}},
                                       block, false);
                 CHECK_FALSE(hasNonFinite(out));
-                // Feedback at max is clamped inside the stand-in, so the loop stays bounded.
+                // Feedback at max is clamped inside the delay, so the loop stays bounded.
                 CHECK(out.getMagnitude(0, 0, out.getNumSamples()) < 10.0f);
             }
 }

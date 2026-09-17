@@ -31,6 +31,41 @@ bool isNumeric(const juce::String& text)
     return t.isNotEmpty() && t.containsOnly("0123456789.-+eE") && t.containsAnyOf("0123456789");
 }
 
+/** A playing transport at a fixed tempo, 4/4, starting at bar 1. */
+class FixedTempoPlayHead final : public juce::AudioPlayHead
+{
+public:
+    FixedTempoPlayHead(double bpmToReport, double sampleRate)
+        : bpm(bpmToReport)
+        , fs(sampleRate)
+    {
+    }
+
+    void setPositionSamples(juce::int64 samples) noexcept { positionSamples = samples; }
+
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setBpm(bpm);
+        info.setTimeSignature(TimeSignature{4, 4});
+        info.setIsPlaying(true);
+        info.setIsRecording(false);
+        info.setTimeInSamples(positionSamples);
+        const double seconds = static_cast<double>(positionSamples) / fs;
+        info.setTimeInSeconds(seconds);
+        info.setPpqPosition(seconds * bpm / 60.0);
+        info.setPpqPositionOfLastBarStart(0.0);
+        return info;
+    }
+
+    bool canControlTransport() override { return false; }
+
+private:
+    double bpm;
+    double fs;
+    juce::int64 positionSamples = 0;
+};
+
 } // namespace
 
 std::string applyParameterOverride(juce::AudioProcessorValueTreeState& apvts, const std::string& id,
@@ -97,7 +132,11 @@ RenderOutput renderThroughProcessor(const juce::AudioBuffer<float>& input,
         return result;
     }
 
+    // Declared before the processor so it outlives it.
+    FixedTempoPlayHead playHead(settings.bpm.value_or(0.0), settings.sampleRate);
     ClearSpaceProcessor processor;
+    if (settings.bpm.has_value())
+        processor.setPlayHead(&playHead);
 
     // Main in/out stereo; sidechain disabled unless a key buffer was supplied.
     const int sidechainChannels = std::min(2, settings.sidechain.getNumChannels());
@@ -204,6 +243,7 @@ RenderOutput renderThroughProcessor(const juce::AudioBuffer<float>& input,
 
         juce::AudioBuffer<float> view(block.getArrayOfWritePointers(), block.getNumChannels(), n);
         midi.clear();
+        playHead.setPositionSamples(pos);
         processor.processBlock(view, midi);
 
         for (int ch = 0; ch < 2; ++ch)
@@ -211,6 +251,7 @@ RenderOutput renderThroughProcessor(const juce::AudioBuffer<float>& input,
     }
 
     processor.releaseResources();
+    processor.setPlayHead(nullptr);
     return result;
 }
 

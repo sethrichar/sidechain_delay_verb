@@ -15,7 +15,8 @@ set(TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test_parameters.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_render_roundtrip.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_ducker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/test_routing.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_routing.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_delay.cpp)
 
 # A JUCE console app so the message manager / leak detector are set up the
 # same way as in tools/render.

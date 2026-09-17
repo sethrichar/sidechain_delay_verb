@@ -19,6 +19,7 @@ const juce::Identifier stateVersionProperty("stateVersion");
 
 constexpr int routingSerialIndex = 0;      // params::routingChoices(): Serial, Parallel
 constexpr int duckSourceExternalIndex = 1; // params::duckSourceChoices(): Internal, External
+constexpr int stereoModePingPongIndex = 1; // params::delayStereoModeChoices(): Stereo, PingPong
 
 bool asBool(const std::atomic<float>* p) noexcept
 {
@@ -63,6 +64,7 @@ ClearSpaceProcessor::ClearSpaceProcessor()
 {
     apvts.state.setProperty(stateVersionProperty, params::stateVersion, nullptr);
     cacheParameterPointers();
+    effectiveDelayMs.store(resolveDelayTimeMs(), std::memory_order_relaxed);
 }
 
 void ClearSpaceProcessor::cacheParameterPointers()
@@ -81,7 +83,17 @@ void ClearSpaceProcessor::cacheParameterPointers()
     raw.duckSource = get(ParamID::duckSource);
     raw.duckLink = get(ParamID::duckLink);
     raw.delayBypass = get(ParamID::delayBypass);
+    raw.delayMode = get(ParamID::delayMode);
+    raw.delayTime = get(ParamID::delayTime);
+    raw.delaySync = get(ParamID::delaySync);
+    raw.delayNote = get(ParamID::delayNote);
+    raw.delayNoteMod = get(ParamID::delayNoteMod);
     raw.delayFeedback = get(ParamID::delayFeedback);
+    raw.delayLowCut = get(ParamID::delayLowCut);
+    raw.delayHighCut = get(ParamID::delayHighCut);
+    raw.delayMod = get(ParamID::delayMod);
+    raw.delayModRate = get(ParamID::delayModRate);
+    raw.delayStereoMode = get(ParamID::delayStereoMode);
     raw.delayLevel = get(ParamID::delayLevel);
     raw.reverbBypass = get(ParamID::reverbBypass);
     raw.reverbDecay = get(ParamID::reverbDecay);
@@ -141,15 +153,41 @@ bool ClearSpaceProcessor::isSidechainConnected() const
     return bus != nullptr && bus->isEnabled() && bus->getNumberOfChannels() > 0;
 }
 
+float ClearSpaceProcessor::resolveDelayTimeMs() const noexcept
+{
+    const auto mode = static_cast<dsp::DelayEngine::Mode>(asIndex(raw.delayMode));
+    float ms = asFloat(raw.delayTime);
+    if (asBool(raw.delaySync))
+        ms = static_cast<float>(1000.0 * dsp::DelayEngine::noteLengthSeconds(
+                                             hostBpm.load(std::memory_order_relaxed),
+                                             asIndex(raw.delayNote), asIndex(raw.delayNoteMod)));
+    return dsp::DelayEngine::clampTimeMs(mode, ms);
+}
+
+void ClearSpaceProcessor::readHostTempo()
+{
+    // Only the playhead's BPM is used; a stopped transport still reports its tempo so sync
+    // works while auditioning. No playhead (Standalone) → fallback.
+    double bpm = dsp::DelayEngine::fallbackBpm;
+    if (auto* head = getPlayHead())
+        if (const auto position = head->getPosition())
+            if (const auto hostTempo = position->getBpm())
+                if (*hostTempo > 0.0)
+                    bpm = *hostTempo;
+    hostBpm.store(bpm, std::memory_order_relaxed);
+}
+
 double ClearSpaceProcessor::getTailLengthSeconds() const
 {
     // Read straight from the parameter atomics so this is correct from any thread, even
     // before the first processBlock. Mirrors Routing::getTailSeconds.
     const bool serial = asIndex(raw.routing) == routingSerialIndex;
-    const double delayTail =
-        asBool(raw.delayBypass)
-            ? 0.0
-            : dsp::standin::StandInDelay::tailSecondsFor(asFloat(raw.delayFeedback) / 100.0f);
+    const double delayTail = asBool(raw.delayBypass)
+                                 ? 0.0
+                                 : dsp::DelayEngine::tailSecondsFor(
+                                       static_cast<dsp::DelayEngine::Mode>(asIndex(raw.delayMode)),
+                                       effectiveDelayMs.load(std::memory_order_relaxed),
+                                       asFloat(raw.delayFeedback) / 100.0f);
     const double reverbTail =
         asBool(raw.reverbBypass) ? 0.0 : static_cast<double>(asFloat(raw.reverbDecay));
     return serial ? delayTail + reverbTail : std::max(delayTail, reverbTail);
@@ -194,7 +232,18 @@ void ClearSpaceProcessor::updateFromParameters()
     delayDucker.setParams(delayDuck);
     reverbDucker.setParams(asBool(raw.duckLink) ? delayDuck : raw.reverbDuck.read());
 
-    delayEffect.setFeedback(asFloat(raw.delayFeedback) / 100.0f);
+    dsp::DelayEngine::Params d;
+    d.mode = static_cast<dsp::DelayEngine::Mode>(asIndex(raw.delayMode));
+    d.timeMs = resolveDelayTimeMs();
+    d.feedback = asFloat(raw.delayFeedback) / 100.0f;
+    d.lowCutHz = asFloat(raw.delayLowCut);
+    d.highCutHz = asFloat(raw.delayHighCut);
+    d.modDepth = asFloat(raw.delayMod) / 100.0f;
+    d.modRateHz = asFloat(raw.delayModRate);
+    d.pingPong = asIndex(raw.delayStereoMode) == stereoModePingPongIndex;
+    delayEffect.setParams(d);
+    effectiveDelayMs.store(d.timeMs, std::memory_order_relaxed);
+
     reverbEffect.setDecaySeconds(asFloat(raw.reverbDecay));
 
     dsp::Routing::Params p;
@@ -261,6 +310,7 @@ void ClearSpaceProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         return; // processBlock before prepareToPlay: nothing is sized yet
     }
 
+    readHostTempo();
     updateFromParameters();
 
     auto mainIn = getBusBuffer(buffer, true, mainInputBus);

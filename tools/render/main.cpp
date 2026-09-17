@@ -50,6 +50,8 @@ void printUsage()
            "  --set-at s:id=value  parameter change at s seconds (repeatable)\n"
            "  --sidechain <src>    external key: a synthetic source name or a WAV;\n"
            "                       enables the sidechain bus (same --freq/--level/--seconds)\n"
+           "  --bpm <n>            give the processor a playing transport at n BPM\n"
+           "                       (for delaySync; without it there is no playhead)\n"
            "  --stats              print key=value statistics\n"
            "  --tail               append the processor's reported tail\n"
            "  --help\n";
@@ -101,6 +103,12 @@ bool parseArgs(int argc, char** argv, Options& opts, std::string& error)
             if ((v = need(i, "--block")) == nullptr)
                 return false;
             opts.render.blockSize = std::stoi(v);
+        }
+        else if (arg == "--bpm")
+        {
+            if ((v = need(i, "--bpm")) == nullptr)
+                return false;
+            opts.render.bpm = std::stod(v);
         }
         else if (arg == "--seconds")
         {

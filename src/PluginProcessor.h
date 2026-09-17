@@ -3,7 +3,7 @@
 #include "Parameters.h"
 #include "dsp/Ducker.h"
 #include "dsp/Routing.h"
-#include "dsp/standin/StandInDelay.h"
+#include "dsp/delay/DelayEngine.h"
 #include "dsp/standin/StandInReverb.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -15,8 +15,10 @@ namespace clearspace
 
 /** Clear Space — ducking delay + reverb.
 
-    Phase 1: input trim → key (internal or external sidechain) → two duckers → Routing
-    (delay / reverb stand-ins, serial/parallel, levels, bypass, equal-power mix, output trim).
+    Input trim → key (internal or external sidechain) → two duckers → Routing (delay engine,
+    reverb stand-in, serial/parallel, levels, bypass, equal-power mix, output trim).
+    Phase 2: the delay section is the real DelayEngine (Digital mode); the reverb is still the
+    Phase 1 stand-in.
     Buses: main in (mono or stereo) → main out (stereo); optional "Sidechain" input
     (mono or stereo, off by default) used as the external key when `duckSource` = External.
 */
@@ -80,11 +82,24 @@ public:
     /** Input trim ramp. */
     static constexpr float inputTrimSmoothingMs = 20.0f;
 
+    /** Delay time actually in use (ms) after tempo sync and the mode clamp — what the tail
+        and the Phase 6 UI readout are based on. Written by the audio thread. */
+    float getEffectiveDelayTimeMs() const noexcept
+    {
+        return effectiveDelayMs.load(std::memory_order_relaxed);
+    }
+    /** BPM last read from the host playhead (or DelayEngine::fallbackBpm). */
+    double getHostBpm() const noexcept { return hostBpm.load(std::memory_order_relaxed); }
+
 private:
     static BusesProperties makeBuses();
 
     void cacheParameterPointers();
     void updateFromParameters();
+    /** Resolves delayTime / tempo sync / mode clamp into the delay time in ms. */
+    float resolveDelayTimeMs() const noexcept;
+    /** Reads the host BPM from the playhead. Audio thread only. */
+    void readHostTempo();
     void processChunk(const float* inL, const float* inR, const float* keyL, const float* keyR,
                       float* outL, float* outR, int numSamples);
 
@@ -93,7 +108,7 @@ private:
     // DSP
     dsp::Ducker delayDucker, reverbDucker;
     dsp::Routing routing;
-    dsp::standin::StandInDelay delayEffect;
+    dsp::DelayEngine delayEffect;
     dsp::standin::StandInReverb reverbEffect;
     juce::LinearSmoothedValue<float> inputGain{1.0f};
 
@@ -107,6 +122,8 @@ private:
     std::atomic<float> delayGrDb{0.0f};
     std::atomic<float> reverbGrDb{0.0f};
     std::atomic<bool> usingExternalKey{false};
+    std::atomic<float> effectiveDelayMs{375.0f};
+    std::atomic<double> hostBpm{dsp::DelayEngine::fallbackBpm};
 
     // Parameter atomics (owned by the APVTS)
     struct RawParams
@@ -118,7 +135,17 @@ private:
         std::atomic<float>* duckSource = nullptr;
         std::atomic<float>* duckLink = nullptr;
         std::atomic<float>* delayBypass = nullptr;
+        std::atomic<float>* delayMode = nullptr;
+        std::atomic<float>* delayTime = nullptr;
+        std::atomic<float>* delaySync = nullptr;
+        std::atomic<float>* delayNote = nullptr;
+        std::atomic<float>* delayNoteMod = nullptr;
         std::atomic<float>* delayFeedback = nullptr;
+        std::atomic<float>* delayLowCut = nullptr;
+        std::atomic<float>* delayHighCut = nullptr;
+        std::atomic<float>* delayMod = nullptr;
+        std::atomic<float>* delayModRate = nullptr;
+        std::atomic<float>* delayStereoMode = nullptr;
         std::atomic<float>* delayLevel = nullptr;
         std::atomic<float>* reverbBypass = nullptr;
         std::atomic<float>* reverbDecay = nullptr;

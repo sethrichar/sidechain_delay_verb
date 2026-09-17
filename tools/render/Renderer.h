@@ -6,6 +6,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,6 +33,9 @@ struct RenderSettings
     std::vector<AutomationPoint> automation;
     /** Append getTailLengthSeconds() of silence after the input. */
     bool appendTail = false;
+    /** Host tempo. Set → the processor sees a playing playhead at this BPM (for `delaySync`);
+        unset → no playhead, as in the Standalone. */
+    std::optional<double> bpm;
     /** Optional external key. Empty (0 channels) = sidechain bus disabled. Mono or stereo;
         shorter than the input is padded with silence, longer is truncated. */
     juce::AudioBuffer<float> sidechain;
