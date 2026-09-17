@@ -14,7 +14,7 @@ if(APPLE)
 endif()
 
 project(ClearSpace
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "Ducking delay + reverb"
     LANGUAGES C CXX)
 
@@ -54,7 +54,9 @@ set(CLEARSPACE_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/PluginProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/PluginEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Ducker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Routing.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Routing.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/delay/DigitalDelay.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/delay/DelayEngine.cpp)
 
 add_library(ClearSpaceCore INTERFACE)
 target_sources(ClearSpaceCore INTERFACE ${CLEARSPACE_CORE_SOURCES})
