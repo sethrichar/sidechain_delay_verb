@@ -74,10 +74,11 @@ Everything is a stand-in except the ducker and the routing, so judge only those:
    Duck Source = External): the readout should say "key: external".
 Ignore: the delay is fixed at 500 ms with no filters; the reverb is metallic by design.
 
-### Open questions
-1. Hold is effectively `hold + ~20 ms` with a hot key (ADR-0003). Fine, or compensate?
-2. Ducker disabled fades over 20 ms rather than the release time (ADR-0003). OK?
-3. Serial tail reports delay + reverb (sum) instead of SPEC's max (ADR-0002). OK?
+### Decisions (Seth, 2026-09-17)
+1. Hold is effectively `hold + ~20 ms` with a hot key (ADR-0003): **OK as is.**
+2. Ducker disabled fades over 20 ms rather than the release time (ADR-0003): **OK.**
+3. Serial tail reports delay + reverb (sum) instead of SPEC's max (ADR-0002): **OK.**
+4. Listening pass on v0.2 deferred; do it before or during Phase 2 (LISTENING_NOTES).
 
 ## v0.1 — Phase 0: Scaffold (2026-09-13)
 
