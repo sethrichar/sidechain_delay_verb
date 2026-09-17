@@ -33,7 +33,7 @@ first one whose checkbox is unticked. Tick boxes as you complete them.
   HPF); external-sidechain test: key on bus 2 ducks wet while bus 1 is silent.
 
 ## Phase 2 — Digital delay  →  tag `v0.3`
-- [ ] `DelayLine.h` fractional Hermite line; `DigitalDelay` with dual-line crossfade
+- [x] `DelayLine.h` fractional Hermite line; `DigitalDelay` with dual-line crossfade
       on time change, feedback filters, mod, stereo/ping-pong, tempo sync.
 - **Accept:** echo position ±1 sample at 44.1/48/96k; time sweep 100→1000 ms renders
   with no click (max sample-to-sample jump < 0.1 above the signal's own); ping-pong

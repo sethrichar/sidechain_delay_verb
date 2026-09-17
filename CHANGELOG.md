@@ -3,6 +3,95 @@
 Internal revisions are `v0.N`; whole numbers are shipped builds (CLAUDE.md §5).
 Each entry: what changed, what Seth should listen for, open questions.
 
+## v0.3 — Phase 2: Digital delay (2026-09-17)
+
+### Added
+- `src/dsp/DelayLine.h`: header-only fractional delay line (power-of-two ring, 4-point
+  3rd-order Hermite read, integer read, NaN-guarded clamp). Reads are relative to the next
+  write so feedback can be folded into the written sample.
+- `src/dsp/delay/DigitalDelay`: SPEC §4.1. 1–2000 ms; **two read heads on one buffer with a
+  30 ms equal-power crossfade on every time change** (no pitch artefact; a change during a
+  crossfade waits for it); feedback 0–100 % → loop coefficient 0–0.98 (hard clamp, no
+  saturation); `delayLowCut` / `delayHighCut` 2nd-order filters **in the feedback path only**
+  (first echo untouched, repeats shaped); sine modulation of the read position up to 2 ms
+  (`delayMod`, `delayModRate`), right channel in quadrature; **Stereo** (independent L/R) or
+  **PingPong** (mono sum → left line, cross-fed returns, echoes alternate L R L …) with a 20 ms
+  blend between the two; 20 ms smoothing on feedback, mod depth and cutoffs. Near-integer
+  delays are snapped so a 500 ms echo at 96 kHz is bit-exact. Details in ADR-0004.
+- `src/dsp/delay/DelayEngine`: the `Effect` the processor owns for the delay section — mode
+  selection, SPEC §6 per-mode time clamps (Digital 1–2000, BBD 20–1000, Tape 20–2000 ms),
+  `noteLengthSeconds(bpm, note, modifier)` for tempo sync, tail. **BBD and Tape run the Digital
+  delay until Phase 5.**
+- Processor: `delaySync` / `delayNote` / `delayNoteMod` resolve against the host playhead's
+  BPM (read every block, playing or stopped; **120 BPM fallback** when there is no playhead or
+  tempo, e.g. Standalone). `getEffectiveDelayTimeMs()` and `getHostBpm()` atomics for the
+  tail and the Phase 6 UI. All delay parameters are now live.
+- Render tool: `--bpm <n>` gives the processor a playing transport at that tempo (mock
+  `AudioPlayHead`); library `RenderSettings::bpm`.
+- Tests (47, all green on Release/GCC and Debug/Clang), new in `tests/test_delay.cpp`:
+  DelayLine (integer exactness, Hermite reproduces a quadratic, fractional sine < −60 dB
+  error, clamped/NaN reads safe); first echo within ±1 sample at 44.1/48/96 k for 1, 23.7,
+  375, 1000, 2000 ms (arrival = amplitude centroid, sums to unity); repeats at −6 dB per pass
+  at 50 % (±0.3 dB) and bounded at 100 % (≤ 1/(1−0.98) on a steady tone, ≥ 55 dB down after
+  the reported tail); low/high cut drop a 100 Hz / 10 kHz repeat by ≥ 30 dB while the first
+  echo is unchanged; defaults pass 1 kHz within 0.5 dB per repeat; **time jump 100 → 1000 ms
+  and a 75-step sweep at 0 % and 50 % feedback with max sample step < signal's own + 0.1**
+  (and a hand-spliced jump proves the measure would catch a click); crossfade length
+  30 ± 1.5 ms; modulation pitch deviation 2π·rate·depth (2.5 % at 2 Hz / 100 %, ±15 %; half
+  at 50 %; < 0.1 % at 0 %; L/R differ); ping-pong alternates L R L with the other channel
+  < −80 dB, Stereo keeps L = R, a left-only input stays left, mode switch mid-stream is
+  smooth; note-length table and per-mode clamps; sync follows a mocked playhead at 120, 90
+  and 140 BPM for straight/dotted/triplet notes (±1 sample), sync off ignores the playhead,
+  no playhead → 120 BPM, a whole note at 60 BPM clamps to 2 s; silence in → exactly silence
+  out and no NaN/Inf over 3 rates × 5 block sizes × {1 ms, 2000 ms} × {Stereo, PingPong} at
+  100 % feedback / 100 % mod at 10 Hz; CPU ratio.
+- ADR-0004 (crossfade design, 0.98 feedback ceiling, filters in the loop, quadrature LFO,
+  ping-pong topology, sync fallback, tail formula, BBD/Tape stub).
+- `archive/standin/StandInDelay.h`: the Phase 1 stand-in delay, moved out of `src/` (kept per
+  CLAUDE.md §5; `archive/README.md` indexes it).
+
+### Changed
+- Routing/smoke tests pin `delayTime = 500` and `delayMod = 0` where timing matters (the
+  stand-in was fixed at 500 ms; defaults are now 375 ms with 10 % modulation). Default tail is
+  now 5.016 s (0.377 s × 8 repeats + 2 s reverb, Serial); the delay tail includes the 2 ms
+  modulation allowance.
+- CI Linux render smoke also checks a synced echo at 100 BPM lands on sample 14400.
+- Project version 0.3.0.
+
+### Measured (Linux container, Release/GCC 13, 48 kHz)
+- CPU, whole chain at defaults, 48 kHz / 512: **0.58 % of one core** (20 s in 0.116 s).
+  Delay + ducker alone with 50 % mod and ping-pong: **0.51 %**. Debug/Clang not enforced.
+- pluginval 1.0.4 `--strictness-level 10` on the Linux VST3: **SUCCESS**.
+- **Not run here (needs macOS):** AU build, `auval`, pluginval on the AU — CI covers these.
+
+### What Seth should listen for
+The delay is now real (Digital mode). Judge it plus the ducker; ignore the reverb (still the
+metallic stand-in) and treat BBD/Tape as "Digital with different time limits" for now.
+1. **Time-change feel:** sweep Delay Time while a vocal or loop is running. You should hear
+   clean crossfades with no pitch swoop and no clicks. Does 30 ms feel right, or does a fast
+   sweep sound "steppy"? (ADR-0004: a 50–80 ms crossfade is a one-line change.)
+2. **Feedback at 100 %:** hold a phrase into it. It should build toward roughly +34 dB on a
+   sustained tone and never run away; repeats eventually fade. Is the 0.98 ceiling right, or
+   do you want true infinite hold (would need a limiter in the loop — decision below)?
+3. **Low/High Cut** at the 150 Hz / 8 kHz defaults: do repeats sit under a vocal the way you
+   want, or should the defaults be wider/narrower?
+4. **Mod** at the 10 % / 0.8 Hz defaults: subtle chorus on the repeats. Too much, too little,
+   or should default be 0?
+5. **Ping-Pong** on a mono vocal: first repeat left, then right. Confirm the switch from
+   Stereo to Ping-Pong mid-song has no click.
+6. **Sync** in your DAW at a few tempos, 1/8 dotted and 1/4 triplet: the repeats should sit
+   on the grid. Also check the Standalone (no tempo → 120 BPM).
+7. **1 ms** delay with high feedback and mod: it's a comb/flanger; harmless, just confirm no
+   nasties.
+
+### Open questions for Seth
+1. Feedback ceiling 0.98 vs. true infinite (1.0 with an in-loop limiter)? Default is 0.98.
+2. Crossfade length 30 ms (SPEC's "≈30 ms") — keep, or longer for smoother knob sweeps?
+3. L/R modulation in quadrature (stereo movement) vs. identical (mono-compatible repeats)?
+4. Listening checkpoint #1 is due after Phase 3 (Plate); the v0.2 listening pass was deferred
+   to this build, so both the ducker notes and the delay notes can go in one LISTENING_NOTES
+   entry.
+
 ## v0.2 — Phase 1: Routing + ducker (2026-09-17)
 
 ### Added

@@ -108,6 +108,9 @@ jobs:
           "$R" --in a.wav --set mix=0 --out b.wav --stats
           cmp a.wav b.wav
           "$R" --in burst --seconds 2 --sidechain sine --set duckSource=External --tail --stats
+          "$R" --in impulse --seconds 1 --bpm 100 --set delaySync=on --set delayNote=1/8 \
+            --set delayMod=0 --set delayFeedback=0 --set mix=100 --set reverbBypass=on --stats \
+            | grep -q "ch0.firstNonZero=14400"
 
       - name: pluginval VST3 (Linux, best effort)
         run: |

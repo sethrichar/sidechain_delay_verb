@@ -9,10 +9,12 @@ Standalone, macOS first. Built with CMake + JUCE 8.0.15.
 - Project conventions (for Claude Code sessions): [`CLAUDE.md`](CLAUDE.md)
 - Design decisions: [`docs/decisions/`](docs/decisions/)
 
-**Status:** Phase 1 (`v0.2`) — routing + ducker. The sidechain ducker, the signal flow
-(serial/parallel, levels, bypass, equal-power mix, trims, tails) and the external sidechain
-bus are real; the delay and reverb are temporary stand-ins (fixed 500 ms delay, comb
-"reverb") until Phases 2–5. Generic editor with a live gain-reduction readout.
+**Status:** Phase 2 (`v0.3`) — Digital delay. The sidechain ducker, the signal flow
+(serial/parallel, levels, bypass, equal-power mix, trims, tails), the external sidechain bus
+and the Digital delay (1–2000 ms, click-free time changes, feedback tone filters, modulation,
+stereo/ping-pong, tempo sync) are real. BBD and Tape modes run the Digital delay until
+Phase 5; the reverb is still the Phase 1 comb stand-in until Phase 3. Generic editor with a
+live gain-reduction readout.
 
 ## Build
 
@@ -79,7 +81,7 @@ a build: `build/tools/render/render_artefacts/<Config>/render`.
 render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
        [--sr 48000] [--block 512] [--seconds 2.0] [--freq 1000] [--level -6]
        [--seed 1] [--set id=value]... [--set-at seconds:id=value]...
-       [--sidechain <source|path.wav>] [--stats] [--tail]
+       [--sidechain <source|path.wav>] [--bpm <n>] [--stats] [--tail]
 ```
 
 - `--set` takes the parameter ID from `src/Parameters.h` and a value in natural units
@@ -90,6 +92,8 @@ render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
 - `--set-at 1.0:delayBypass=on` changes a parameter mid-render (at the first block starting
   at or after that time). `--sidechain sine` (or a WAV) enables the sidechain bus and feeds
   it; use with `--set duckSource=External`.
+- `--bpm 120` gives the processor a playing transport at that tempo so `--set delaySync=on`
+  works; without it there is no playhead (like the Standalone) and sync assumes 120 BPM.
 - Output WAV is 32-bit float, so a dry-path round trip (`--set mix=0`) is bit-exact.
 - Exit codes: `0` ok, `1` usage error, `2` render/IO error, `3` NaN/Inf in the output.
 
@@ -98,7 +102,8 @@ render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
 `.clang-format` (LLVM base, 4 spaces, 100 columns). Run before committing:
 
 ```
-clang-format -i src/*.{h,cpp} src/dsp/*.{h,cpp} src/dsp/standin/*.h tests/*.{h,cpp} tools/render/*.{h,cpp}
+clang-format -i src/*.{h,cpp} src/dsp/*.{h,cpp} src/dsp/delay/*.{h,cpp} src/dsp/standin/*.h \
+  tests/*.{h,cpp} tools/render/*.{h,cpp}
 ```
 
 ## Layout
@@ -106,7 +111,9 @@ clang-format -i src/*.{h,cpp} src/dsp/*.{h,cpp} src/dsp/standin/*.h tests/*.{h,c
 ```
 CMakeLists.txt           project, JUCE/Catch2 pins, plugin target, -Werror policy
 src/                     PluginProcessor, PluginEditor, Parameters (APVTS single source of truth)
-src/dsp/                 pure DSP: Ducker, Routing, Biquad, Effect interface; standin/ (Phase 1 stand-ins)
+src/dsp/                 pure DSP: Ducker, Routing, Biquad, DelayLine, Effect interface;
+                         delay/ (DelayEngine, DigitalDelay); standin/ (Phase 1 reverb stand-in)
+archive/                 superseded code, kept reachable (never deleted)
 src/ui/                  custom look-and-feel and components (Phase 6)
 tests/                   Catch2 tests, discovered into ctest
 tools/render/            offline render library + CLI
