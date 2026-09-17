@@ -1,5 +1,6 @@
-// Phase 0 acceptance: the render tool round-trips a WAV bit-exactly through the
-// pass-through processor, and the stats/sources behave as documented.
+// Phase 0 acceptance, kept alive from Phase 1 on: with the mix at 0 % the dry path is a
+// bit-exact pass-through (the effects still run, their contribution is multiplied by an
+// exact 0), and the stats/sources behave as documented.
 
 #include "Parameters.h"
 #include "Renderer.h"
@@ -11,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstring>
+#include <functional>
 
 using namespace clearspace;
 using namespace clearspace::render;
@@ -24,20 +26,24 @@ juce::File scratchFile(const char* name)
     return juce::File(CLEARSPACE_TEST_SCRATCH_DIR).getChildFile(name);
 }
 
+/** Sample-for-sample equality. Uses float equality rather than memcmp so that a −0 in the
+    source (the speechlike AM envelope produces one at its trough) matches the +0 that
+    `x * 1 + 0` yields on the dry path. */
 bool bitExact(const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b)
 {
     if (a.getNumChannels() != b.getNumChannels() || a.getNumSamples() != b.getNumSamples())
         return false;
+    const std::equal_to<float> same;
     for (int ch = 0; ch < a.getNumChannels(); ++ch)
-        if (std::memcmp(a.getReadPointer(ch), b.getReadPointer(ch),
-                        sizeof(float) * static_cast<size_t>(a.getNumSamples())) != 0)
-            return false;
+        for (int i = 0; i < a.getNumSamples(); ++i)
+            if (!same(a.getSample(ch, i), b.getSample(ch, i)))
+                return false;
     return true;
 }
 
 } // namespace
 
-TEST_CASE("render: WAV round trip through the pass-through is bit-exact", "[render][wav]")
+TEST_CASE("render: WAV round trip through the dry path is bit-exact", "[render][wav]")
 {
     const double sr = 48000.0;
     SourceSpec spec;
@@ -57,6 +63,7 @@ TEST_CASE("render: WAV round trip through the pass-through is bit-exact", "[rend
     RenderSettings settings;
     settings.sampleRate = sr;
     settings.blockSize = 397; // deliberately awkward block size
+    settings.parameterOverrides = {{ParamID::mix, "0"}};
     auto out = renderThroughProcessor(readBack->buffer, settings);
     REQUIRE(out.ok());
     REQUIRE(bitExact(out.buffer, original));
@@ -67,7 +74,7 @@ TEST_CASE("render: WAV round trip through the pass-through is bit-exact", "[rend
     CHECK(bitExact(outBack->buffer, original));
 }
 
-TEST_CASE("render: pass-through is exact for every block size and sample rate", "[render]")
+TEST_CASE("render: dry path is exact for every block size and sample rate", "[render]")
 {
     for (double sr : {44100.0, 48000.0, 96000.0})
         for (int block : {1, 7, 64, 512, 4096})
@@ -81,6 +88,7 @@ TEST_CASE("render: pass-through is exact for every block size and sample rate", 
             RenderSettings settings;
             settings.sampleRate = sr;
             settings.blockSize = block;
+            settings.parameterOverrides = {{ParamID::mix, "0"}};
             auto out = renderThroughProcessor(input, settings);
             REQUIRE(out.ok());
             CHECK(bitExact(out.buffer, input));
@@ -97,6 +105,7 @@ TEST_CASE("render: mono input is duplicated to both output channels", "[render]"
     const auto mono = makeSource(spec, 48000.0);
 
     RenderSettings settings;
+    settings.parameterOverrides = {{ParamID::mix, "0"}};
     auto out = renderThroughProcessor(mono, settings);
     REQUIRE(out.ok());
     REQUIRE(out.buffer.getNumChannels() == 2);
