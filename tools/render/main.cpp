@@ -2,7 +2,8 @@
 //
 //   render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
 //          [--sr 48000] [--block 512] [--seconds 2.0] [--freq 1000] [--level -6]
-//          [--seed 1] [--set id=value]... [--stats] [--tail]
+//          [--seed 1] [--set id=value]... [--set-at seconds:id=value]...
+//          [--sidechain <source|path.wav>] [--stats] [--tail]
 //
 // Exit codes: 0 ok · 1 usage error · 2 render/IO error · 3 NaN/Inf in output.
 
@@ -26,6 +27,7 @@ using namespace clearspace::render;
 struct Options
 {
     std::string input;
+    std::string sidechain;
     std::string output;
     RenderSettings render;
     SourceSpec source;
@@ -35,18 +37,22 @@ struct Options
 
 void printUsage()
 {
-    std::cout << "usage: render --in <impulse|sine|burst|noise|speechlike|path.wav> [options]\n"
-                 "  --out <file.wav>     write output (32-bit float WAV)\n"
-                 "  --sr <hz>            sample rate for synthetic sources / processing (48000)\n"
-                 "  --block <n>          block size in samples (512)\n"
-                 "  --seconds <s>        synthetic source length (2.0)\n"
-                 "  --freq <hz>          sine/burst frequency (1000)\n"
-                 "  --level <dbfs>       synthetic source peak level (-6)\n"
-                 "  --seed <n>           noise seed (1)\n"
-                 "  --set id=value       parameter override (repeatable)\n"
-                 "  --stats              print key=value statistics\n"
-                 "  --tail               append the processor's reported tail\n"
-                 "  --help\n";
+    std::cout
+        << "usage: render --in <impulse|sine|burst|noise|speechlike|path.wav> [options]\n"
+           "  --out <file.wav>     write output (32-bit float WAV)\n"
+           "  --sr <hz>            sample rate for synthetic sources / processing (48000)\n"
+           "  --block <n>          block size in samples (512)\n"
+           "  --seconds <s>        synthetic source length (2.0)\n"
+           "  --freq <hz>          sine/burst frequency (1000)\n"
+           "  --level <dbfs>       synthetic source peak level (-6)\n"
+           "  --seed <n>           noise seed (1)\n"
+           "  --set id=value       parameter override (repeatable)\n"
+           "  --set-at s:id=value  parameter change at s seconds (repeatable)\n"
+           "  --sidechain <src>    external key: a synthetic source name or a WAV;\n"
+           "                       enables the sidechain bus (same --freq/--level/--seconds)\n"
+           "  --stats              print key=value statistics\n"
+           "  --tail               append the processor's reported tail\n"
+           "  --help\n";
 }
 
 bool parseArgs(int argc, char** argv, Options& opts, std::string& error)
@@ -133,6 +139,31 @@ bool parseArgs(int argc, char** argv, Options& opts, std::string& error)
             }
             opts.render.parameterOverrides.emplace_back(pair.substr(0, eq), pair.substr(eq + 1));
         }
+        else if (arg == "--set-at")
+        {
+            if ((v = need(i, "--set-at")) == nullptr)
+                return false;
+            const std::string spec = v;
+            const auto colon = spec.find(':');
+            const auto eq = spec.find('=');
+            if (colon == std::string::npos || eq == std::string::npos || eq < colon + 2 ||
+                colon == 0)
+            {
+                error = "--set-at expects seconds:id=value, got '" + spec + "'";
+                return false;
+            }
+            AutomationPoint point;
+            point.timeSeconds = std::stod(spec.substr(0, colon));
+            point.id = spec.substr(colon + 1, eq - colon - 1);
+            point.value = spec.substr(eq + 1);
+            opts.render.automation.push_back(std::move(point));
+        }
+        else if (arg == "--sidechain")
+        {
+            if ((v = need(i, "--sidechain")) == nullptr)
+                return false;
+            opts.sidechain = v;
+        }
         else
         {
             error = "unknown argument '" + arg + "'";
@@ -195,6 +226,29 @@ int main(int argc, char** argv)
         }
         input = std::move(wav->buffer);
         opts.render.sampleRate = wav->sampleRate; // process at the file's rate
+    }
+
+    // ---- sidechain key ----
+    if (!opts.sidechain.empty())
+    {
+        if (auto kind = parseSourceKind(opts.sidechain))
+        {
+            auto spec = opts.source;
+            spec.kind = *kind;
+            opts.render.sidechain = makeSource(spec, opts.render.sampleRate);
+        }
+        else
+        {
+            const juce::File file =
+                juce::File::getCurrentWorkingDirectory().getChildFile(opts.sidechain);
+            auto wav = readWav(file);
+            if (!wav)
+            {
+                std::cerr << "render: cannot read sidechain WAV '" << opts.sidechain << "'\n";
+                return 2;
+            }
+            opts.render.sidechain = std::move(wav->buffer);
+        }
     }
 
     // ---- render ----

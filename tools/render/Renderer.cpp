@@ -99,15 +99,24 @@ RenderOutput renderThroughProcessor(const juce::AudioBuffer<float>& input,
 
     ClearSpaceProcessor processor;
 
-    // Main in/out stereo, sidechain disabled (Phase 1 adds --sidechain).
+    // Main in/out stereo; sidechain disabled unless a key buffer was supplied.
+    const int sidechainChannels = std::min(2, settings.sidechain.getNumChannels());
     auto layout = processor.getBusesLayout();
     layout.inputBuses.set(ClearSpaceProcessor::mainInputBus, juce::AudioChannelSet::stereo());
     layout.outputBuses.set(ClearSpaceProcessor::mainOutputBus, juce::AudioChannelSet::stereo());
     if (layout.inputBuses.size() > ClearSpaceProcessor::sidechainBus)
-        layout.inputBuses.set(ClearSpaceProcessor::sidechainBus, juce::AudioChannelSet::disabled());
+        layout.inputBuses.set(ClearSpaceProcessor::sidechainBus,
+                              sidechainChannels == 0   ? juce::AudioChannelSet::disabled()
+                              : sidechainChannels == 1 ? juce::AudioChannelSet::mono()
+                                                       : juce::AudioChannelSet::stereo());
     if (!processor.setBusesLayout(layout))
     {
-        result.errors.push_back({"processor rejected stereo in/out bus layout"});
+        result.errors.push_back({"processor rejected the requested bus layout"});
+        return result;
+    }
+    if (sidechainChannels > 0 && !processor.isSidechainConnected())
+    {
+        result.errors.push_back({"sidechain bus did not enable"});
         return result;
     }
 
@@ -117,8 +126,22 @@ RenderOutput renderThroughProcessor(const juce::AudioBuffer<float>& input,
         if (!error.empty())
             result.errors.push_back({error});
     }
+    for (const auto& point : settings.automation)
+    {
+        // Validate up front so a typo fails the render instead of silently doing nothing.
+        if (processor.getAPVTS().getParameter(juce::String(point.id)) == nullptr)
+            result.errors.push_back({"automation: unknown parameter '" + point.id + "'"});
+        if (point.timeSeconds < 0.0)
+            result.errors.push_back({"automation: negative time for '" + point.id + "'"});
+    }
     if (!result.ok())
         return result;
+
+    auto automation = settings.automation;
+    std::stable_sort(automation.begin(), automation.end(),
+                     [](const AutomationPoint& a, const AutomationPoint& b)
+                     { return a.timeSeconds < b.timeSeconds; });
+    size_t nextAutomation = 0;
 
     processor.setRateAndBufferSizeDetails(settings.sampleRate, settings.blockSize);
     processor.prepareToPlay(settings.sampleRate, settings.blockSize);
@@ -138,9 +161,28 @@ RenderOutput renderThroughProcessor(const juce::AudioBuffer<float>& input,
     result.buffer.setSize(2, std::max(0, totalSamples));
     result.buffer.clear();
 
+    const int sidechainOffset = sidechainChannels > 0
+                                    ? processor.getChannelIndexInProcessBlockBuffer(
+                                          true, ClearSpaceProcessor::sidechainBus, 0)
+                                    : -1;
+
     for (int pos = 0; pos < totalSamples; pos += settings.blockSize)
     {
         const auto n = std::min(settings.blockSize, totalSamples - pos);
+        const double blockStart = static_cast<double>(pos) / settings.sampleRate;
+
+        while (nextAutomation < automation.size() &&
+               automation[nextAutomation].timeSeconds <= blockStart + 1.0e-9)
+        {
+            const auto& point = automation[nextAutomation++];
+            auto error = applyParameterOverride(processor.getAPVTS(), point.id, point.value);
+            if (!error.empty())
+            {
+                result.errors.push_back({"automation: " + error});
+                return result;
+            }
+        }
+
         block.clear();
 
         for (int ch = 0; ch < 2; ++ch)
@@ -149,6 +191,15 @@ RenderOutput renderThroughProcessor(const juce::AudioBuffer<float>& input,
             const auto available = std::max(0, std::min(n, inputSamples - pos));
             if (srcCh >= 0 && available > 0)
                 block.copyFrom(ch, 0, input, srcCh, pos, available);
+        }
+
+        for (int ch = 0; ch < sidechainChannels; ++ch)
+        {
+            const auto available =
+                std::max(0, std::min(n, settings.sidechain.getNumSamples() - pos));
+            if (available > 0 && sidechainOffset >= 0 &&
+                sidechainOffset + ch < block.getNumChannels())
+                block.copyFrom(sidechainOffset + ch, 0, settings.sidechain, ch, pos, available);
         }
 
         juce::AudioBuffer<float> view(block.getArrayOfWritePointers(), block.getNumChannels(), n);
