@@ -111,6 +111,8 @@ jobs:
           "$R" --in impulse --seconds 1 --bpm 100 --set delaySync=on --set delayNote=1/8 \
             --set delayMod=0 --set delayFeedback=0 --set mix=100 --set reverbBypass=on --stats \
             | grep -q "ch0.firstNonZero=14400"
+          "$R" --in impulse --seconds 1 --set mix=100 --set delayBypass=on --tail --stats \
+            | awk -F= '/^samples=/ { if ($2 < 48000 * 4) { print "plate tail too short: " $2; exit 1 } }'
 
       - name: pluginval VST3 (Linux, best effort)
         run: |

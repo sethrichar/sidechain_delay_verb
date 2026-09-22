@@ -40,8 +40,8 @@ first one whose checkbox is unticked. Tick boxes as you complete them.
   alternates channels on successive echoes; sync follows a mocked playhead at 120 BPM.
 
 ## Phase 3 — Plate reverb (Dattorro)  →  tag `v0.4`
-- [ ] `PlateReverb` per SPEC §5.1, calibrated so `reverbDecay` ≈ measured RT60.
-- [ ] `ReverbEngine` interface + pre-delay, low/high cut, width.
+- [x] `PlateReverb` per SPEC §5.1, calibrated so `reverbDecay` ≈ measured RT60.
+- [x] `ReverbEngine` interface + pre-delay, low/high cut, width.
 - **Accept:** RT60 within ±15% across 0.3–10 s; impulse response has no isolated
   repeating peaks > −20 dB after 100 ms (metallic-ringing check via autocorrelation);
   stereo L/R correlation at 100% width < 0.5.

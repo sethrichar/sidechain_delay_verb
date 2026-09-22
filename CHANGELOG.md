@@ -3,6 +3,101 @@
 Internal revisions are `v0.N`; whole numbers are shipped builds (CLAUDE.md §5).
 Each entry: what changed, what Seth should listen for, open questions.
 
+## v0.4 — Phase 3: Plate reverb (2026-09-22)
+
+### Added
+- `src/dsp/reverb/PlateReverb`: SPEC §5.1, **Dattorro's 1997 figure-of-eight tank** implemented
+  from the paper — four series input diffusion allpasses, two cross-coupled halves (modulated
+  allpass → delay → damping LPF → × decay → allpass → delay → × decay), the paper's seven output
+  taps per side; every length scaled from 29.761 kHz and read with the Hermite `DelayLine`, so
+  it is the same plate at 44.1 / 48 / 96 kHz. `reverbDecay` sets the loop gain from the tank's
+  round trip, **calibrated so the Schroeder RT60 tracks the knob** (measured +12 % / −7 % over
+  0.3–20 s at every size); `reverbSize` scales the tank 0.5×–1.5× with a 300 ms glide;
+  `reverbDamping` is the in-loop one-pole; `reverbDiffusion` scales the input diffusers;
+  `reverbModRate` / `reverbModDepth` drive one sine LFO per half (the right at 1.07× the rate so
+  the halves never beat), up to the paper's 16-sample excursion. Every allpass coefficient is
+  capped so its ring-out never outlasts half the decay, and short decays shrink the tank so its
+  round trip stays within 1.2× the decay (the Size knob is unaffected above ~0.9 s). Details and
+  the alternatives in ADR-0005.
+- `src/dsp/reverb/ReverbEngine`: the `Effect` the processor owns for the reverb section — mode
+  selection (**Hall and Room run the Plate until Phase 4**; Room already clamps decay to 2.5 s),
+  stereo pre-delay 0–250 ms with a 100 ms click-free glide, 2nd-order low / high cut on the
+  return, mid/side width (0 % = exactly mono), tail = pre-delay + round trip + 1.25 × decay.
+- Processor: all twelve reverb parameters are live (`reverbMode`, `reverbPreDelay`,
+  `reverbDecay`, `reverbSize`, `reverbDamping`, `reverbLowCut`, `reverbHighCut`,
+  `reverbDiffusion`, `reverbModRate`, `reverbModDepth`, `reverbWidth`, `reverbLevel`).
+- Tests (62, all green on Release/GCC 13 and Debug/Clang 18), new in `tests/test_reverb.cpp`:
+  decay-gain / allpass-cap / size-coupling / tail unit checks; **RT60 within ±15 % for 0.3, 0.5,
+  1, 2, 5, 10 s at sizes 0 / 50 / 100 %** on both channels, and at 44.1 / 96 kHz; damping leaves
+  the < 300 Hz band's decay rate alone (±10 %) while the broadband figure shortens; **no
+  metallic ringing** (periodicity of the 100–600 ms response < 0.1, i.e. no repeating peak above
+  −20 dB, with the measure proven on a comb, a four-comb bank and a lone echo pair); stereo
+  correlation at 100 % width < 0.5 (measured 0.1), 0 % exactly mono; pre-delay onset exact to the
+  sample at three rates; pre-delay 0 → 250 → 0 ms, size 0 → 100 → 0 % and Plate → Hall → Room
+  mid-stream have no click; low cut / high cut drop a 40 Hz / 15 kHz tone by ≥ 30 dB; damping
+  darkens an 8 kHz tail by ≥ 15 dB and moves a 200 Hz tail < 3 dB; diffusion 0 → 100 % densifies
+  the first 15 ms > 5×; modulation moves the tail (difference > −10 dB) at equal energy; ≥ 60 dB
+  down at the reported tail for 0.3 / 2 / 10 s at every size; wet peak ≤ input + 6 dB at the
+  default decay and bounded at 20 s; silence in → exactly silence out and no NaN/Inf over
+  3 rates × {1, 16, 512, 4096} × {0.1 s, 20 s} × {size 0, 100} with 100 % mod at 5 Hz; CPU
+  ratio. A hidden `[.calibrate]` case prints the RT60 / level tables used to set the constants.
+- ADR-0005 (tank, decay calibration, allpass caps, size coupling, size glide, LFOs, ringing
+  measure, tail, wrapper stages, mono input, output level).
+- `archive/standin/StandInReverb.h`: the Phase 1 comb stand-in, moved out of `src/` (kept per
+  CLAUDE.md §5; `archive/README.md` indexes it).
+
+### Changed
+- Tail reporting: the reverb section now reports pre-delay + round trip + 1.25 × decay
+  (3.245 s at the defaults instead of 2.0 s); the default whole-chain tail is 6.261 s. The
+  routing / smoke tests take the figure from `ReverbEngine::tailSecondsFor`.
+- CI Linux render smoke also renders a 1 s impulse through the plate at 100 % wet with the delay
+  bypassed and checks the tail has ≥ 3 s of output.
+- Project version 0.4.0.
+
+### Measured (Linux container, Release/GCC 13, 48 kHz)
+- CPU, reverb section alone with 50 % modulation, 48 kHz / 512: **1.42 % of one core**
+  (20 s in 0.283 s). Whole chain at defaults: **1.76 %** (was 0.58 % with the stand-in). Delay +
+  ducker alone: 0.56 %. Debug/Clang not enforced.
+- RT60 / `reverbDecay` at the 6 kHz damping default: 0.94–1.12 across 0.3–20 s × sizes
+  0 / 50 / 100 %. Low band (< 300 Hz) rings ~1.2× the broadband figure at every setting.
+- 100 % wet level, 2 s plate: sustained 1 kHz tone −2.4 dB, noise −7.7 dB relative RMS; impulse
+  peak −31 dBFS for a 0 dBFS impulse.
+- pluginval / auval: **not run here** (no pluginval binary in this container); CI covers the
+  macOS VST3 / AU and the Linux VST3 on every push.
+
+### What Seth should listen for
+The reverb is now real (Plate mode). This is **listening checkpoint #1** (BUILD_PLAN): Digital
+delay + Plate + ducker on a vocal. Hall and Room are the Plate for now.
+1. **Decay feel:** 0.5 s, 2 s (default), 5 s on a vocal. Does 2 s feel like 2 s? The low end
+   rings a little longer than the mids (by design, ADR-0005) — is that plate-like or muddy with
+   the 100 Hz low cut at its default?
+2. **Metallic / flutter check:** sustained notes and a snare hit at 2 s and at 5 s, modulation
+   at the 30 % / 1 Hz default and at 0 %. Any ringing pitch or flutter is a bug.
+3. **Size:** 0 %, 50 %, 100 % at 2 s. Then sweep Size while a loop plays — you should hear the
+   plate stretch (a slow pitch smear over 300 ms), never a click. Too slow / too fast?
+4. **Short decays:** 0.3–0.8 s at Size 100 %. The tank shrinks automatically there (ADR-0005),
+   so Size does less. Acceptable, or should the knob keep its full range and let short decays
+   read as early reflections?
+5. **Level at 100 % wet on a return** at 2 s: about −2 dB below the send on a sustained source,
+   −8 dB on noise. Is the return hot enough / too hot? Long decays on sustained sources build up
+   to +10 dB over the input peak by design.
+6. **Damping** at 6 kHz default vs 2 kHz vs 15 kHz; **Low/High cut** defaults 100 Hz / 12 kHz
+   on a vocal.
+7. **Pre-delay** 0 → 20 (default) → 80 ms on a vocal; sweeping it live smears for 100 ms — fine?
+8. **Width** 100 → 50 → 0 %: mono at 0 %, the plate's own image at 100 %.
+9. **Ducking the plate:** the reverb ducker at defaults under the vocal — depth 12 dB, release
+   400 ms. With Serial routing the plate also hears the (ducked) delay return.
+10. Re-check the v0.3 delay questions (crossfade 30 ms, 0.98 feedback ceiling, quadrature mod)
+    in the same session; the answers can go in one LISTENING_NOTES entry.
+
+### Open questions for Seth
+1. Output level of the plate at 100 % wet (see item 5): keep, or trim ±3 dB?
+2. Short-decay size coupling (item 4): keep the 1.2× rule, or expose the full tank at any decay?
+3. Should `reverbDecay` mean the broadband RT60 (current, per CLAUDE.md §6) or the low-band
+   RT60 (reads ~20 % shorter on the knob than what the low end does)?
+4. v0.3 questions still open: feedback ceiling 0.98 vs infinite, crossfade 30 ms, quadrature
+   modulation.
+
 ## v0.3 — Phase 2: Digital delay (2026-09-17)
 
 ### Added

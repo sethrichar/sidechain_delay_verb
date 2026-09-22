@@ -9,12 +9,13 @@ Standalone, macOS first. Built with CMake + JUCE 8.0.15.
 - Project conventions (for Claude Code sessions): [`CLAUDE.md`](CLAUDE.md)
 - Design decisions: [`docs/decisions/`](docs/decisions/)
 
-**Status:** Phase 2 (`v0.3`) — Digital delay. The sidechain ducker, the signal flow
-(serial/parallel, levels, bypass, equal-power mix, trims, tails), the external sidechain bus
-and the Digital delay (1–2000 ms, click-free time changes, feedback tone filters, modulation,
-stereo/ping-pong, tempo sync) are real. BBD and Tape modes run the Digital delay until
-Phase 5; the reverb is still the Phase 1 comb stand-in until Phase 3. Generic editor with a
-live gain-reduction readout.
+**Status:** Phase 3 (`v0.4`) — Plate reverb. The sidechain ducker, the signal flow
+(serial/parallel, levels, bypass, equal-power mix, trims, tails), the external sidechain bus,
+the Digital delay (1–2000 ms, click-free time changes, feedback tone filters, modulation,
+stereo/ping-pong, tempo sync) and the Dattorro plate reverb (decay calibrated to RT60, size,
+damping, diffusion, modulation, pre-delay, low/high cut, width) are real. BBD and Tape modes
+run the Digital delay until Phase 5; Hall and Room modes run the Plate until Phase 4. Generic
+editor with a live gain-reduction readout.
 
 ## Build
 
@@ -58,7 +59,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 Tests are Catch2 (`tests/`). DSP phases add offline-render tests that use the render tool
-library, so acceptance criteria are measured, not listened for.
+library, so acceptance criteria are measured, not listened for. Hidden calibration tables
+(RT60 and level grids for the reverb) print with `ClearSpaceTests "[.calibrate]"`.
 
 ## Validate
 
@@ -102,8 +104,8 @@ render --in <impulse|sine|burst|noise|speechlike|path.wav> [--out out.wav]
 `.clang-format` (LLVM base, 4 spaces, 100 columns). Run before committing:
 
 ```
-clang-format -i src/*.{h,cpp} src/dsp/*.{h,cpp} src/dsp/delay/*.{h,cpp} src/dsp/standin/*.h \
-  tests/*.{h,cpp} tools/render/*.{h,cpp}
+clang-format -i src/*.{h,cpp} src/dsp/*.{h,cpp} src/dsp/delay/*.{h,cpp} \
+  src/dsp/reverb/*.{h,cpp} tests/*.{h,cpp} tools/render/*.{h,cpp}
 ```
 
 ## Layout
@@ -112,7 +114,7 @@ clang-format -i src/*.{h,cpp} src/dsp/*.{h,cpp} src/dsp/delay/*.{h,cpp} src/dsp/
 CMakeLists.txt           project, JUCE/Catch2 pins, plugin target, -Werror policy
 src/                     PluginProcessor, PluginEditor, Parameters (APVTS single source of truth)
 src/dsp/                 pure DSP: Ducker, Routing, Biquad, DelayLine, Effect interface;
-                         delay/ (DelayEngine, DigitalDelay); standin/ (Phase 1 reverb stand-in)
+                         delay/ (DelayEngine, DigitalDelay); reverb/ (ReverbEngine, PlateReverb)
 archive/                 superseded code, kept reachable (never deleted)
 src/ui/                  custom look-and-feel and components (Phase 6)
 tests/                   Catch2 tests, discovered into ctest

@@ -685,7 +685,11 @@ TEST_CASE("cpu: reverb section alone (48 kHz / 512, mod on)", "[cpu][reverb]")
     const double ratio = elapsed / seconds;
     std::cout << "cpu: reverb section alone (48 kHz / 512): " << seconds << " s rendered in "
               << elapsed << " s → " << ratio * 100.0 << " % of one core\n";
+#ifdef NDEBUG
     CHECK(ratio < 0.03);
+#else
+    WARN("cpu check not enforced in a Debug build (" << ratio * 100.0 << " %)");
+#endif
 }
 
 // -------------------------------------------------------------------------------------------

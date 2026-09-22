@@ -1,6 +1,6 @@
 #pragma once
 
-// Common interface for the delay and reverb engines (and the Phase 1 stand-ins).
+// Common interface for the delay and reverb engines (and the archived Phase 1 stand-ins).
 // Pure DSP: no allocation in process(), all sizing in prepare().
 
 #include <atomic>
