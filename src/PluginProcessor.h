@@ -4,7 +4,7 @@
 #include "dsp/Ducker.h"
 #include "dsp/Routing.h"
 #include "dsp/delay/DelayEngine.h"
-#include "dsp/standin/StandInReverb.h"
+#include "dsp/reverb/ReverbEngine.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -16,9 +16,9 @@ namespace clearspace
 /** Clear Space — ducking delay + reverb.
 
     Input trim → key (internal or external sidechain) → two duckers → Routing (delay engine,
-    reverb stand-in, serial/parallel, levels, bypass, equal-power mix, output trim).
-    Phase 2: the delay section is the real DelayEngine (Digital mode); the reverb is still the
-    Phase 1 stand-in.
+    reverb engine, serial/parallel, levels, bypass, equal-power mix, output trim).
+    Phase 3: the delay section is the DelayEngine (Digital mode) and the reverb section is the
+    ReverbEngine (Plate mode).
     Buses: main in (mono or stereo) → main out (stereo); optional "Sidechain" input
     (mono or stereo, off by default) used as the external key when `duckSource` = External.
 */
@@ -109,7 +109,7 @@ private:
     dsp::Ducker delayDucker, reverbDucker;
     dsp::Routing routing;
     dsp::DelayEngine delayEffect;
-    dsp::standin::StandInReverb reverbEffect;
+    dsp::ReverbEngine reverbEffect;
     juce::LinearSmoothedValue<float> inputGain{1.0f};
 
     // Scratch (sized in prepareToPlay)
@@ -148,7 +148,17 @@ private:
         std::atomic<float>* delayStereoMode = nullptr;
         std::atomic<float>* delayLevel = nullptr;
         std::atomic<float>* reverbBypass = nullptr;
+        std::atomic<float>* reverbMode = nullptr;
+        std::atomic<float>* reverbPreDelay = nullptr;
         std::atomic<float>* reverbDecay = nullptr;
+        std::atomic<float>* reverbSize = nullptr;
+        std::atomic<float>* reverbDamping = nullptr;
+        std::atomic<float>* reverbLowCut = nullptr;
+        std::atomic<float>* reverbHighCut = nullptr;
+        std::atomic<float>* reverbDiffusion = nullptr;
+        std::atomic<float>* reverbModRate = nullptr;
+        std::atomic<float>* reverbModDepth = nullptr;
+        std::atomic<float>* reverbWidth = nullptr;
         std::atomic<float>* reverbLevel = nullptr;
 
         struct Duck

@@ -9,6 +9,7 @@
 #include "Renderer.h"
 #include "Sources.h"
 #include "dsp/Routing.h"
+#include "dsp/reverb/ReverbEngine.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -195,7 +196,7 @@ TEST_CASE("routing: the delay return echoes at the set time and level", "[routin
     }
 }
 
-TEST_CASE("routing: stand-in reverb RT60 tracks reverbDecay within ±15 %", "[routing][standin]")
+TEST_CASE("routing: the reverb section's RT60 tracks reverbDecay within ±15 %", "[routing][reverb]")
 {
     const double sr = 48000.0;
     for (float decay : {0.5f, 2.0f, 5.0f})
@@ -324,15 +325,18 @@ TEST_CASE("routing: tail reporting and silence", "[routing][tail]")
         applyParameterOverride(apvts, ParamID::reverbDecay, "3");
         // The delay tail carries a 2 ms allowance for read-position modulation. The time is
         // taken from the last processBlock (or the constructor), so run one block first.
+        // The reverb tail is pre-delay + the plate's round trip + 1.25 × decay (ADR-0005).
+        const double reverbTail =
+            dsp::ReverbEngine::tailSecondsFor(dsp::ReverbEngine::Mode::plate, 3.0f, 20.0f, 0.5f);
         p.setRateAndBufferSizeDetails(sr, 64);
         p.prepareToPlay(sr, 64);
         juce::AudioBuffer<float> block(2, 64);
         block.clear();
         juce::MidiBuffer midi;
         p.processBlock(block, midi);
-        CHECK(p.getTailLengthSeconds() == Approx(3.502).margin(1e-3));
+        CHECK(p.getTailLengthSeconds() == Approx(0.502 + reverbTail).margin(1e-3));
         applyParameterOverride(apvts, ParamID::routing, "Parallel");
-        CHECK(p.getTailLengthSeconds() == Approx(3.0).margin(1e-3));
+        CHECK(p.getTailLengthSeconds() == Approx(reverbTail).margin(1e-3));
         applyParameterOverride(apvts, ParamID::reverbBypass, "on");
         CHECK(p.getTailLengthSeconds() == Approx(0.502).margin(1e-3));
         applyParameterOverride(apvts, ParamID::delayBypass, "on");

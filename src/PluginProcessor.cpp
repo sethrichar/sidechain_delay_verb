@@ -96,7 +96,17 @@ void ClearSpaceProcessor::cacheParameterPointers()
     raw.delayStereoMode = get(ParamID::delayStereoMode);
     raw.delayLevel = get(ParamID::delayLevel);
     raw.reverbBypass = get(ParamID::reverbBypass);
+    raw.reverbMode = get(ParamID::reverbMode);
+    raw.reverbPreDelay = get(ParamID::reverbPreDelay);
     raw.reverbDecay = get(ParamID::reverbDecay);
+    raw.reverbSize = get(ParamID::reverbSize);
+    raw.reverbDamping = get(ParamID::reverbDamping);
+    raw.reverbLowCut = get(ParamID::reverbLowCut);
+    raw.reverbHighCut = get(ParamID::reverbHighCut);
+    raw.reverbDiffusion = get(ParamID::reverbDiffusion);
+    raw.reverbModRate = get(ParamID::reverbModRate);
+    raw.reverbModDepth = get(ParamID::reverbModDepth);
+    raw.reverbWidth = get(ParamID::reverbWidth);
     raw.reverbLevel = get(ParamID::reverbLevel);
 
     raw.delayDuck.enable = get(ParamID::delayDuckEnable);
@@ -189,7 +199,12 @@ double ClearSpaceProcessor::getTailLengthSeconds() const
                                        effectiveDelayMs.load(std::memory_order_relaxed),
                                        asFloat(raw.delayFeedback) / 100.0f);
     const double reverbTail =
-        asBool(raw.reverbBypass) ? 0.0 : static_cast<double>(asFloat(raw.reverbDecay));
+        asBool(raw.reverbBypass)
+            ? 0.0
+            : dsp::ReverbEngine::tailSecondsFor(
+                  static_cast<dsp::ReverbEngine::Mode>(asIndex(raw.reverbMode)),
+                  asFloat(raw.reverbDecay), asFloat(raw.reverbPreDelay),
+                  asFloat(raw.reverbSize) / 100.0f);
     return serial ? delayTail + reverbTail : std::max(delayTail, reverbTail);
 }
 
@@ -244,7 +259,19 @@ void ClearSpaceProcessor::updateFromParameters()
     delayEffect.setParams(d);
     effectiveDelayMs.store(d.timeMs, std::memory_order_relaxed);
 
-    reverbEffect.setDecaySeconds(asFloat(raw.reverbDecay));
+    dsp::ReverbEngine::Params r;
+    r.mode = static_cast<dsp::ReverbEngine::Mode>(asIndex(raw.reverbMode));
+    r.preDelayMs = asFloat(raw.reverbPreDelay);
+    r.decaySeconds = asFloat(raw.reverbDecay);
+    r.size = asFloat(raw.reverbSize) / 100.0f;
+    r.dampingHz = asFloat(raw.reverbDamping);
+    r.lowCutHz = asFloat(raw.reverbLowCut);
+    r.highCutHz = asFloat(raw.reverbHighCut);
+    r.diffusion = asFloat(raw.reverbDiffusion) / 100.0f;
+    r.modRateHz = asFloat(raw.reverbModRate);
+    r.modDepth = asFloat(raw.reverbModDepth) / 100.0f;
+    r.width = asFloat(raw.reverbWidth) / 100.0f;
+    reverbEffect.setParams(r);
 
     dsp::Routing::Params p;
     p.serial = asIndex(raw.routing) == routingSerialIndex;
